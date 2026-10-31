@@ -1,48 +1,57 @@
-# Brightloop Subscription Management API
+# Brightloop API
 
-Phase 1 backend foundation for the subscription management system workflow. The API uses Express, TypeScript, PostgreSQL and Prisma.
+The backend uses Express, TypeScript, PostgreSQL, and Prisma.
 
-## Start locally
+## Local setup
 
-1. Install Node.js 20+ and PostgreSQL 15+.
-2. From `backend/`, copy `.env.example` to `.env` and set a private JWT secret of at least 32 characters and the PostgreSQL connection string.
-3. Run `npm install`.
-4. Run `npm run db:generate` and `npm run db:migrate -- --name foundation`.
-5. Set `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` in `.env`, then run `npm run db:seed` to create the administrator and repeatable demo customer, product, variant and plan records.
-6. Run `npm run dev`.
+1. Start PostgreSQL and create the `brightloop` database.
+2. Copy `.env.example` to `.env` and configure private values. Keep secrets out of Git and browser code.
+3. From this folder run `npm install`, `npm run db:generate`, `npm run db:migrate`, and `npm run db:seed`.
+4. Run `npm run dev`. The default API address is `http://localhost:4000`.
 
-The API listens on `http://localhost:4000` by default. `GET /api/v1/health` checks the database connection.
+The Vite frontend defaults to `http://localhost:5173`; set `FRONTEND_ORIGIN` to that exact origin for local CORS.
 
-## Initial endpoints
+## Routes
 
-- `POST /api/v1/auth/register` — create a customer account and profile. New accounts are pending verification.
-- `GET /api/v1/auth/verify-email?token=...` — consume a single-use verification link and activate the customer account.
-- `POST /api/v1/auth/resend-verification` — request a replacement verification email.
-- `POST /api/v1/auth/login` — issue a short-lived bearer access token for active accounts.
-- `GET /api/v1/auth/me` — return the authenticated account.
-- `GET /api/v1/catalog/products` — list active products and active variants for an authenticated user.
-- `GET /api/v1/catalog/plans` — list currently available plans and their active included products for an authenticated user.
-- `POST /api/v1/subscriptions` — create a draft subscription for the authenticated customer from an available plan. A draft remains inactive until its invoice is paid.
-- `POST /api/v1/subscriptions/:subscriptionId/invoice` — create the subscription's first payable invoice. Repeating the request returns the existing invoice.
-- `GET /api/v1/invoices/:invoiceId` — return an invoice summary to an authenticated owner or staff/admin user.
-- `GET /api/v1/invoices/:invoiceId/pdf` — generate, save and download an invoice PDF for the authenticated owner or a staff/admin user. Generated files are stored under `backend/storage/invoices/` and are excluded from Git.
-- `POST /api/v1/invoices/:invoiceId/order` — create a Razorpay order for the authenticated customer's payable INR invoice.
-- `POST /api/v1/payments/razorpay/verify` — verify the signed checkout result and confirm captured payment status with Razorpay before recording the payment.
+### Authentication and customer billing
 
-Registration requires `email`, `password` (9+ characters, upper/lowercase and special character), and `name`; `companyName` is optional. Login is rate-limited. Passwords use bcrypt and access tokens use a server-side secret.
+- `GET /api/v1/health` — API and database health.
+- `POST /api/v1/auth/register` — create a pending customer account and send a verification email.
+- `GET /api/v1/auth/verify-email?token=...` — consume a single-use email verification link.
+- `POST /api/v1/auth/resend-verification` — request a fresh verification email.
+- `POST /api/v1/auth/login` and `GET /api/v1/auth/me` — issue and check a bearer access token.
+- `GET /api/v1/catalog/products` and `GET /api/v1/catalog/plans` — list available catalog records.
+- `GET /api/v1/subscriptions` — list subscriptions belonging to the signed-in customer.
+- `POST /api/v1/subscriptions` — create a draft subscription from an available plan.
+- `POST /api/v1/subscriptions/:subscriptionId/invoice` — create or return its first invoice.
+- `GET /api/v1/invoices` and `GET /api/v1/invoices/:invoiceId` — read authorized invoice history and details.
+- `GET /api/v1/invoices/:invoiceId/pdf` — generate and download the invoice PDF.
+- `POST /api/v1/invoices/:invoiceId/order` — create or reuse a Razorpay order for the invoice balance.
+- `POST /api/v1/payments/razorpay/verify` — verify the checkout signature and captured payment with Razorpay before recording it.
 
-## Workflow decisions still needed
+### Administrator and staff
 
-The design document leaves several domain policies open. The initial schema defaults to INR and models manual payments; before billing is enabled, confirm payment gateway needs, invoice numbering rules, partial/overpayments, proration, billing timezone, tax selection, discount stacking, failed-payment handling and cancellation/pause effects. Email delivery and verification-token issuance must be wired to the chosen provider before customer self-registration is opened. Do not activate pending customer accounts manually in production without verifying their email.
+All `/api/v1/admin/*` routes require an active ADMIN or STAFF bearer token.
 
-This initial slice establishes the database foundation and auth/health API. Domain endpoints and background billing workers are the next implementation phases.
+- `GET /api/v1/admin/dashboard` — counts and totals from saved customers, invoices, subscriptions, payments, and attempts.
+- `GET /api/v1/admin/integrations` — non-secret configured/not-configured status for Razorpay and Resend.
+- `/api/v1/admin/customers` — paginated/searchable customer list, plus `POST` and `PATCH`.
+- `/api/v1/admin/products` — paginated/searchable product list, plus `POST` and `PATCH`.
+- `/api/v1/admin/plans` — paginated/searchable plan list, plus `POST` and `PATCH`; plan changes can select included active products through `productIds`.
+- `GET /api/v1/admin/subscriptions` — paginated/searchable subscription records with an optional status filter.
+- `GET /api/v1/admin/invoices` — paginated/searchable invoice records with an optional status filter.
+- `GET /api/v1/admin/payments` — paginated/searchable verified payments.
 
-The seed is safe to rerun: it creates the same demo records by fixed IDs and leaves existing records with those IDs unchanged. It does not create subscriptions, since those require workflow-driven business actions.
+List routes accept `page`, `pageSize` (1–100), and `search`; applicable routes also accept `status`. Request bodies are validated, and authorization is enforced by the API as well as the UI.
 
-Razorpay uses `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` from `.env`. Keep test credentials in local development. The demo seed includes invoice `DEMO-INV-0001` for an INR 1,499 test checkout. The order endpoint derives its amount from the invoice balance and does not trust an amount supplied by the client. Configure and verify signed Razorpay webhooks before relying on gateway events in production.
+## Security and workflow notes
 
-Resend uses `RESEND_API_KEY`, `EMAIL_FROM` and `PUBLIC_API_URL` from `.env`. Customer signup sends a single-use email verification link valid for 24 hours. Set `PUBLIC_API_URL` to the publicly reachable API origin before deployment, and use a sender domain verified in Resend for customer delivery. Verification tokens are stored hashed and can be used once.
+- Passwords are hashed with bcrypt. Access tokens are signed on the server. Login and email actions are rate limited.
+- New customer accounts remain pending until email verification succeeds.
+- Razorpay secrets remain in backend `.env`; the order amount comes from the invoice balance. The backend verifies the signature and checks Razorpay's captured payment before activating a subscription.
+- Invoice PDFs are stored under `backend/storage/invoices/` during local development; this folder is excluded from Git.
+- Keep Razorpay in Test Mode while developing. Use a verified sender domain and a public `PUBLIC_API_URL` before deploying verification emails.
 
-When Razorpay confirms a subscription invoice is fully paid, payment verification activates its draft/confirmed subscription and sets its start, expiry and (when renewal is allowed) next billing dates. Partial payments leave the subscription inactive.
+## Not implemented yet
 
-Invoice PDFs are generated by the API and stored on the backend machine in `storage/invoices/`. This is suitable for local development. Back up that folder if the generated PDFs need to be retained; local files are not shared between multiple API servers.
+Quotations, user/role administration, organization settings, customer-to-user assignment, subscription cancellation/pause/resume, recurring billing workers, and automated failed-attempt updates are not implemented. No UI should treat these as live features.

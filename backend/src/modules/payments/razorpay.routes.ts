@@ -10,6 +10,38 @@ import { addBillingInterval } from '../subscriptions/subscription-period.service
 
 export const razorpayRouter = Router();
 
+razorpayRouter.get('/invoices', authenticate, async (req, res, next) => {
+  try {
+    if (req.auth?.role === 'CUSTOMER' && !req.auth.customerId) throw new HttpError(403, 'A customer profile is required to view invoices.');
+    const where = req.auth?.role === 'CUSTOMER' ? { customerId: req.auth.customerId! } : {};
+    const invoices = await prisma.invoice.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        payments: { select: { amount: true } },
+        customer: { select: { name: true, companyName: true } },
+        subscription: { select: { id: true, number: true, plan: { select: { name: true } } } },
+      },
+    });
+    res.json({ data: invoices.map((invoice) => {
+      const paid = invoice.payments.reduce((sum, payment) => sum.add(payment.amount), new Prisma.Decimal(0));
+      const balanceDue = new Prisma.Decimal(invoice.total).minus(paid);
+      return {
+        id: invoice.id,
+        number: invoice.number,
+        status: invoice.status,
+        currency: invoice.currency,
+        total: invoice.total,
+        balanceDue: balanceDue.greaterThan(0) ? balanceDue : new Prisma.Decimal(0),
+        dueDate: invoice.dueDate,
+        createdAt: invoice.createdAt,
+        customer: invoice.customer,
+        subscription: invoice.subscription,
+      };
+    }) });
+  } catch (error) { next(error); }
+});
+
 const verifySchema = z.object({
   invoiceId: z.string().min(1),
   razorpay_order_id: z.string().min(1),

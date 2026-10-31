@@ -8,6 +8,32 @@ import { authenticate, allowRoles } from '../auth/authenticate';
 
 export const subscriptionsRouter = Router();
 
+subscriptionsRouter.get('/', authenticate, allowRoles(Role.CUSTOMER), async (req, res, next) => {
+  try {
+    const customerId = req.auth?.customerId;
+    if (!customerId) throw new HttpError(403, 'A customer profile is required to view subscriptions.');
+    const subscriptions = await prisma.subscription.findMany({
+      where: { customerId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        currency: true,
+        grandTotal: true,
+        startDate: true,
+        expiryDate: true,
+        nextBillingDate: true,
+        createdAt: true,
+        plan: { select: { id: true, name: true, billingUnit: true, intervalCount: true } },
+      },
+    });
+    res.json({ data: subscriptions });
+  } catch (error) {
+    next(error);
+  }
+});
+
 const createSubscriptionSchema = z.object({
   planId: z.string().trim().min(1).max(64),
 });

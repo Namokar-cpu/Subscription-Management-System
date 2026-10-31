@@ -11,6 +11,7 @@ import { invoiceDocumentsRouter } from './modules/invoices/invoice-documents.rou
 import { catalogRouter } from './modules/catalog/catalog.routes';
 import { subscriptionsRouter } from './modules/subscriptions/subscriptions.routes';
 import { subscriptionInvoicesRouter } from './modules/subscriptions/subscription-invoices.routes';
+import { adminRouter } from './modules/admin/admin.routes';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -22,6 +23,7 @@ app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/catalog', catalogRouter);
 app.use('/api/v1/subscriptions', subscriptionsRouter);
 app.use('/api/v1/subscriptions', subscriptionInvoicesRouter);
+app.use('/api/v1/admin', adminRouter);
 app.use('/api/v1', razorpayRouter);
 app.use('/api/v1', invoiceDocumentsRouter);
 app.use((_req, _res, next) => next(new HttpError(404, 'Endpoint not found.')));
