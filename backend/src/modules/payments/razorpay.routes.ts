@@ -1,11 +1,12 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { InvoiceStatus, PaymentAttemptStatus, PaymentMethod, Prisma } from '@prisma/client';
+import { InvoiceStatus, PaymentAttemptStatus, PaymentMethod, Prisma, SubscriptionStatus } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
 import { HttpError } from '../../common/errors';
 import { prisma } from '../../database/prisma';
 import { authenticate } from '../auth/authenticate';
 import { createRazorpayOrder, fetchRazorpayPayment, getRazorpayKeyId, getRazorpaySecret } from './razorpay.client';
+import { addBillingInterval } from '../subscriptions/subscription-period.service';
 
 export const razorpayRouter = Router();
 
@@ -131,7 +132,7 @@ razorpayRouter.post('/payments/razorpay/verify', authenticate, async (req, res, 
     const input = verifySchema.parse(req.body);
     const attempt = await prisma.paymentAttempt.findUnique({
       where: { providerOrderId: input.razorpay_order_id },
-      include: { invoice: true },
+      include: { invoice: { include: { subscription: { include: { plan: true } } } } },
     });
     if (!attempt || attempt.invoiceId !== input.invoiceId) throw new HttpError(404, 'Payment attempt not found.');
     assertInvoiceAccess(req, attempt.invoice.customerId);
@@ -168,16 +169,48 @@ razorpayRouter.post('/payments/razorpay/verify', authenticate, async (req, res, 
           method: PaymentMethod.RAZORPAY,
           reference: input.razorpay_payment_id,
           providerPaymentId: input.razorpay_payment_id,
+          paidAt: new Date(),
         },
       });
       await tx.paymentAttempt.update({
         where: { id: attempt.id },
         data: { status: PaymentAttemptStatus.CAPTURED, providerPaymentId: input.razorpay_payment_id },
       });
-      await tx.invoice.update({ where: { id: attempt.invoiceId }, data: { status: invoiceStatus } });
-      return { payment, invoiceStatus };
+      let subscriptionActivated = false;
+      let subscriptionStatus: SubscriptionStatus | null = attempt.invoice.subscription?.status ?? null;
+      const invoiceUpdate: Prisma.InvoiceUpdateInput = { status: invoiceStatus };
+      const subscription = attempt.invoice.subscription;
+      if (invoiceStatus === InvoiceStatus.PAID && subscription && (
+        subscription.status === SubscriptionStatus.DRAFT || subscription.status === SubscriptionStatus.CONFIRMED
+      )) {
+        const startDate = payment.paidAt;
+        const expiryDate = addBillingInterval(startDate, subscription.plan.billingUnit, subscription.plan.intervalCount);
+        await tx.subscription.update({
+          where: { id: subscription.id },
+          data: {
+            status: SubscriptionStatus.ACTIVE,
+            startDate,
+            expiryDate,
+            nextBillingDate: subscription.plan.allowRenewal ? expiryDate : null,
+          },
+        });
+        invoiceUpdate.periodStart = startDate;
+        invoiceUpdate.periodEnd = expiryDate;
+        subscriptionActivated = true;
+        subscriptionStatus = SubscriptionStatus.ACTIVE;
+      }
+      await tx.invoice.update({ where: { id: attempt.invoiceId }, data: invoiceUpdate });
+      return { payment, invoiceStatus, subscriptionActivated, subscriptionStatus };
     });
 
-    res.json({ data: { paymentId: result.payment.id, invoiceId: attempt.invoiceId, status: result.invoiceStatus } });
+    res.json({
+      data: {
+        paymentId: result.payment.id,
+        invoiceId: attempt.invoiceId,
+        status: result.invoiceStatus,
+        subscriptionActivated: result.subscriptionActivated,
+        subscriptionStatus: result.subscriptionStatus,
+      },
+    });
   } catch (error) { next(error); }
 });
