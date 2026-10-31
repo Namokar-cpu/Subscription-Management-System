@@ -30,6 +30,7 @@ export default function AdminResourcePage({ resource }) {
   const [page, setPage] = useState(1); const [searchText, setSearchText] = useState(''); const [search, setSearch] = useState(''); const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [downloading, setDownloading] = useState(''); const [error, setError] = useState(''); const [message, setMessage] = useState(''); const [editor, setEditor] = useState(null); const [form, setForm] = useState(initial(resource));
   const isEditable = config.canEdit;
+  const selectedProductId = resource === 'plans' ? searchParams.get('productId') : null;
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
@@ -40,6 +41,11 @@ export default function AdminResourcePage({ resource }) {
   }, [resource, token, page, search, status]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (resource !== 'plans' || !isEditable) return; listAdmin('products', token, { pageSize: 100, status: 'active' }).then((result) => setProducts(result.data)).catch(() => setProducts([])); }, [resource, isEditable, token]);
+  useEffect(() => {
+    if (!selectedProductId) return;
+    setForm({ ...initial('plans'), productIds: [selectedProductId] });
+    setEditor({ id: null });
+  }, [selectedProductId]);
 
   const columns = useMemo(() => config.columns, [config]);
   const openNew = () => {

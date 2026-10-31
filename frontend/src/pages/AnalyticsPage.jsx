@@ -23,5 +23,6 @@ function RevenueChart({ rows }) {
   const currencies = [...new Set(rows.flatMap((row) => Object.keys(row.values)))];
   const currency = currencies[0] || 'INR';
   const values = rows.map((row) => Number(row.values[currency] || 0)); const max = Math.max(...values,1);
+  if (!values.some((value) => value > 0)) return <div className="chart-empty"><span>↗</span><strong>No verified payments yet</strong><p>Complete a customer checkout to populate this chart.</p></div>;
   return <div className="chart-wrap"><div className="chart-values">{values.map((value,i) => <div key={rows[i].month}><span>{money(value,currency)}</span><i style={{height:`${Math.max(3,Math.round(value/max*100))}%`}}/></div>)}</div><div className="chart-labels">{rows.map((row) => <span key={row.month}>{row.month}</span>)}</div><small className="chart-caption">Recorded, verified payments · {currencies.length > 1 ? `Showing ${currency}; amounts remain grouped by currency.` : currency}</small></div>;
 }
