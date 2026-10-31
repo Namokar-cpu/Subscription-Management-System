@@ -8,6 +8,8 @@ const schema = z.object({
   JWT_ACCESS_SECRET: z.string().min(32),
   JWT_ACCESS_TTL: z.string().default('15m'),
   FRONTEND_ORIGIN: z.string().url().default('http://localhost:5173'),
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);
