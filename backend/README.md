@@ -16,8 +16,11 @@ The API listens on `http://localhost:4000` by default. `GET /api/v1/health` chec
 ## Initial endpoints
 
 - `POST /api/v1/auth/register` — create a customer account and profile. New accounts are pending verification.
+- `GET /api/v1/auth/verify-email?token=...` — consume a single-use verification link and activate the customer account.
+- `POST /api/v1/auth/resend-verification` — request a replacement verification email.
 - `POST /api/v1/auth/login` — issue a short-lived bearer access token for active accounts.
 - `GET /api/v1/auth/me` — return the authenticated account.
+- `GET /api/v1/invoices/:invoiceId` — return an invoice summary to an authenticated owner or staff/admin user.
 - `POST /api/v1/invoices/:invoiceId/order` — create a Razorpay order for the authenticated customer's payable INR invoice.
 - `POST /api/v1/payments/razorpay/verify` — verify the signed checkout result and confirm captured payment status with Razorpay before recording the payment.
 
@@ -32,3 +35,5 @@ This initial slice establishes the database foundation and auth/health API. Doma
 The seed is safe to rerun: it creates the same demo records by fixed IDs and leaves existing records with those IDs unchanged. It does not create subscriptions, since those require workflow-driven business actions.
 
 Razorpay uses `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` from `.env`. Keep test credentials in local development. The demo seed includes invoice `DEMO-INV-0001` for an INR 1,499 test checkout. The order endpoint derives its amount from the invoice balance and does not trust an amount supplied by the client. Configure and verify signed Razorpay webhooks before relying on gateway events in production.
+
+Resend uses `RESEND_API_KEY`, `EMAIL_FROM` and `PUBLIC_API_URL` from `.env`. Customer signup sends a single-use email verification link valid for 24 hours. Set `PUBLIC_API_URL` to the publicly reachable API origin before deployment, and use a sender domain verified in Resend for customer delivery. Verification tokens are stored hashed and can be used once.

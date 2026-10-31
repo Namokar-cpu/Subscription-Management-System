@@ -62,6 +62,11 @@ enum PaymentAttemptStatus {
   FAILED
 }
 
+enum AuthTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
 model User {
   id           String        @id @default(cuid())
   email        String        @unique
@@ -69,9 +74,22 @@ model User {
   role         Role          @default(CUSTOMER)
   status       AccountStatus @default(PENDING_VERIFICATION)
   customer     Customer?
+  authTokens   AuthToken[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   @@index([role, status])
+}
+
+model AuthToken {
+  id         String        @id @default(cuid())
+  userId     String
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String        @unique
+  type       AuthTokenType
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime      @default(now())
+  @@index([userId, type, expiresAt])
 }
 
 model Customer {
