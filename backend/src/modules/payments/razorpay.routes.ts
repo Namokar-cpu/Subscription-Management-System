@@ -1,14 +1,14 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { InvoiceStatus, PaymentAttemptStatus, PaymentMethod, Prisma } from '@prisma/client';
+import { InvoiceStatus, PaymentAttemptStatus, PaymentMethod, Prisma, SubscriptionStatus } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
 import { HttpError } from '../../common/errors';
 import { prisma } from '../../database/prisma';
 import { authenticate } from '../auth/authenticate';
 import { createRazorpayOrder, fetchRazorpayPayment, getRazorpayKeyId, getRazorpaySecret } from './razorpay.client';
+import { addBillingInterval } from '../subscriptions/subscription-period.service';
 
 export const razorpayRouter = Router();
-razorpayRouter.use(authenticate);
 
 const verifySchema = z.object({
   invoiceId: z.string().min(1),
@@ -35,7 +35,36 @@ function signatureIsValid(orderId: string, paymentId: string, signature: string)
   return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
 
-razorpayRouter.post('/invoices/:invoiceId/order', async (req, res, next) => {
+razorpayRouter.get('/invoices/:invoiceId', authenticate, async (req, res, next) => {
+  try {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: req.params.invoiceId },
+      include: { customer: true, lines: true, payments: true },
+    });
+    if (!invoice) throw new HttpError(404, 'Invoice not found.');
+    assertInvoiceAccess(req, invoice.customerId);
+
+    const paid = invoice.payments.reduce((sum, payment) => sum.add(payment.amount), new Prisma.Decimal(0));
+    const balanceDue = new Prisma.Decimal(invoice.total).minus(paid).greaterThan(0)
+      ? new Prisma.Decimal(invoice.total).minus(paid)
+      : new Prisma.Decimal(0);
+    res.json({
+      data: {
+        id: invoice.id,
+        number: invoice.number,
+        status: invoice.status,
+        currency: invoice.currency,
+        total: invoice.total,
+        balanceDue,
+        dueDate: invoice.dueDate,
+        customer: { name: invoice.customer.name, companyName: invoice.customer.companyName, billingEmail: invoice.customer.billingEmail },
+        lines: invoice.lines.map((line) => ({ description: line.description, quantity: line.quantity, lineTotal: line.lineTotal })),
+      },
+    });
+  } catch (error) { next(error); }
+});
+
+razorpayRouter.post('/invoices/:invoiceId/order', authenticate, async (req, res, next) => {
   try {
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.invoiceId },
@@ -53,6 +82,23 @@ razorpayRouter.post('/invoices/:invoiceId/order', async (req, res, next) => {
     if (!due.greaterThan(0)) throw new HttpError(409, 'This invoice has no balance due.');
     const amountPaise = due.mul(100).toNumber();
     if (!Number.isSafeInteger(amountPaise)) throw new HttpError(400, 'Invoice amount is outside the supported range.');
+
+    const pendingAttempt = await prisma.paymentAttempt.findFirst({
+      where: { invoiceId: invoice.id, status: PaymentAttemptStatus.CREATED },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (pendingAttempt && new Prisma.Decimal(pendingAttempt.amount).equals(due)) {
+      res.status(200).json({
+        data: {
+          keyId: getRazorpayKeyId(),
+          orderId: pendingAttempt.providerOrderId,
+          amount: amountPaise,
+          currency: pendingAttempt.currency,
+          invoiceNumber: invoice.number,
+        },
+      });
+      return;
+    }
 
     const order = await createRazorpayOrder({
       amount: amountPaise,
@@ -81,12 +127,12 @@ razorpayRouter.post('/invoices/:invoiceId/order', async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-razorpayRouter.post('/razorpay/verify', async (req, res, next) => {
+razorpayRouter.post('/payments/razorpay/verify', authenticate, async (req, res, next) => {
   try {
     const input = verifySchema.parse(req.body);
     const attempt = await prisma.paymentAttempt.findUnique({
       where: { providerOrderId: input.razorpay_order_id },
-      include: { invoice: true },
+      include: { invoice: { include: { subscription: { include: { plan: true } } } } },
     });
     if (!attempt || attempt.invoiceId !== input.invoiceId) throw new HttpError(404, 'Payment attempt not found.');
     assertInvoiceAccess(req, attempt.invoice.customerId);
@@ -123,16 +169,48 @@ razorpayRouter.post('/razorpay/verify', async (req, res, next) => {
           method: PaymentMethod.RAZORPAY,
           reference: input.razorpay_payment_id,
           providerPaymentId: input.razorpay_payment_id,
+          paidAt: new Date(),
         },
       });
       await tx.paymentAttempt.update({
         where: { id: attempt.id },
         data: { status: PaymentAttemptStatus.CAPTURED, providerPaymentId: input.razorpay_payment_id },
       });
-      await tx.invoice.update({ where: { id: attempt.invoiceId }, data: { status: invoiceStatus } });
-      return { payment, invoiceStatus };
+      let subscriptionActivated = false;
+      let subscriptionStatus: SubscriptionStatus | null = attempt.invoice.subscription?.status ?? null;
+      const invoiceUpdate: Prisma.InvoiceUpdateInput = { status: invoiceStatus };
+      const subscription = attempt.invoice.subscription;
+      if (invoiceStatus === InvoiceStatus.PAID && subscription && (
+        subscription.status === SubscriptionStatus.DRAFT || subscription.status === SubscriptionStatus.CONFIRMED
+      )) {
+        const startDate = payment.paidAt;
+        const expiryDate = addBillingInterval(startDate, subscription.plan.billingUnit, subscription.plan.intervalCount);
+        await tx.subscription.update({
+          where: { id: subscription.id },
+          data: {
+            status: SubscriptionStatus.ACTIVE,
+            startDate,
+            expiryDate,
+            nextBillingDate: subscription.plan.allowRenewal ? expiryDate : null,
+          },
+        });
+        invoiceUpdate.periodStart = startDate;
+        invoiceUpdate.periodEnd = expiryDate;
+        subscriptionActivated = true;
+        subscriptionStatus = SubscriptionStatus.ACTIVE;
+      }
+      await tx.invoice.update({ where: { id: attempt.invoiceId }, data: invoiceUpdate });
+      return { payment, invoiceStatus, subscriptionActivated, subscriptionStatus };
     });
 
-    res.json({ data: { paymentId: result.payment.id, invoiceId: attempt.invoiceId, status: result.invoiceStatus } });
+    res.json({
+      data: {
+        paymentId: result.payment.id,
+        invoiceId: attempt.invoiceId,
+        status: result.invoiceStatus,
+        subscriptionActivated: result.subscriptionActivated,
+        subscriptionStatus: result.subscriptionStatus,
+      },
+    });
   } catch (error) { next(error); }
 });

@@ -10,6 +10,9 @@ const schema = z.object({
   FRONTEND_ORIGIN: z.string().url().default('http://localhost:5173'),
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().default('Brightloop <onboarding@resend.dev>'),
+  PUBLIC_API_URL: z.string().url().default('http://localhost:4000'),
 });
 
 const parsed = schema.safeParse(process.env);
