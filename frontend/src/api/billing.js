@@ -1,6 +1,8 @@
 import { download, request } from './client.js';
 
 export const getPlans = (token) => request('/catalog/plans', { token });
+export const getProducts = (token) => request('/catalog/products', { token });
+export const createProductInvoice = (productId, token) => request(`/catalog/products/${encodeURIComponent(productId)}/invoice`, { method: 'POST', token });
 export const getSubscriptions = (token) => request('/subscriptions', { token });
 export const getInvoices = (token) => request('/invoices', { token });
 export const getInvoice = (invoiceId, token) => request(`/invoices/${encodeURIComponent(invoiceId)}`, { token });

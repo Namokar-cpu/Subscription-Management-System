@@ -6,7 +6,8 @@ import ThemeToggle from './ThemeToggle.jsx';
 
 const customerItems = [
   { to: '/app', label: 'Overview', icon: 'grid', end: true },
-  { to: '/app/plans', label: 'Products & plans', icon: 'box' },
+  { to: '/app/products', label: 'Products', icon: 'box' },
+  { to: '/app/plans', label: 'Plans', icon: 'spark' },
   { to: '/app/subscriptions', label: 'Subscriptions', icon: 'users' },
   { to: '/app/invoices', label: 'Invoices', icon: 'receipt' },
 ];

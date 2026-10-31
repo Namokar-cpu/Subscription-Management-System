@@ -10,6 +10,7 @@ import InvoicesPage from './pages/InvoicesPage.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import OverviewPage from './pages/OverviewPage.jsx';
 import PlansPage from './pages/PlansPage.jsx';
+import ProductsPage from './pages/ProductsPage.jsx';
 import SubscriptionsPage from './pages/SubscriptionsPage.jsx';
 
 export default function App() {
@@ -21,7 +22,7 @@ export default function App() {
       <Route path="/app" element={<WorkspaceLayout/>}>
         <Route index element={<OverviewPage/>}/>
         <Route path="customers" element={<AdminResourcePage resource="customers"/>}/>
-        <Route path="products" element={<AdminResourcePage resource="products"/>}/>
+        <Route path="products" element={<RolePage customer={<ProductsPage/>} admin={<AdminResourcePage resource="products"/>}/>}/>
         <Route path="plans" element={<RolePage customer={<PlansPage/>} admin={<AdminResourcePage resource="plans"/>}/>}/>
         <Route path="subscriptions" element={<RolePage customer={<SubscriptionsPage/>} admin={<AdminResourcePage resource="subscriptions"/>}/>}/>
         <Route path="invoices" element={<RolePage customer={<InvoicesPage/>} admin={<AdminResourcePage resource="invoices"/>}/>}/>
