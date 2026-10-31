@@ -4,3 +4,6 @@ dist/
 .env.*
 !.env.example
 storage/
+.checkout-test-session.ts
+.cleanup-old-checkout.ts
+.resend-delivery-check.ts
