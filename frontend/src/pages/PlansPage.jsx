@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { createInvoice, getOrder, getPlans, startSubscription, verifyPayment } from '../api/billing.js';
+import { openRazorpayCheckout } from '../utils/razorpayCheckout.js';
 import CustomerOnly from '../components/CustomerOnly.jsx';
 import Icon from '../components/Icon.jsx';
 import PageHeader from '../components/PageHeader.jsx';
@@ -8,20 +9,6 @@ import { EmptyState, ErrorState, Loading } from '../components/States.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
 const money = (value, currency) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: currency || 'INR', maximumFractionDigits: 2 }).format(Number(value || 0));
-
-function loadRazorpay() {
-  if (window.Razorpay) return Promise.resolve(true);
-  if (window.__brightloopRazorpay) return window.__brightloopRazorpay;
-  window.__brightloopRazorpay = new Promise((resolve) => {
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.body.appendChild(script);
-  });
-  return window.__brightloopRazorpay;
-}
 
 export default function PlansPage() {
   const { token, user } = useAuth();
@@ -53,17 +40,11 @@ export default function PlansPage() {
       const invoiceId = invoiceResult.data.id;
       const orderResult = await getOrder(invoiceId, token);
       const order = orderResult.data;
-      if (!(await loadRazorpay())) throw new Error('Razorpay Checkout could not be loaded. Check your network and try again.');
       setBusyPlan('');
-      const checkout = new window.Razorpay({
-        key: order.keyId,
-        amount: order.amount,
-        currency: order.currency,
-        name: 'Brightloop',
+      await openRazorpayCheckout({
+        order,
         description: `${plan.name} · Invoice ${order.invoiceNumber}`,
-        order_id: order.orderId,
-        theme: { color: '#f5b942' },
-        handler: async (payment) => {
+        onSuccess: async (payment) => {
           setBusyPlan(plan.id); setNotice('Verifying your payment securely…');
           try {
             const verified = await verifyPayment({ invoiceId, ...payment }, token);
@@ -72,13 +53,12 @@ export default function PlansPage() {
           } catch (verifyError) { setError(verifyError.message); setNotice(''); }
           finally { setBusyPlan(''); }
         },
-        modal: { ondismiss: () => { setBusyPlan(''); setNotice('Checkout closed. Your subscription remains pending until payment is verified.'); } },
+        onFailure: (payment) => {
+          setBusyPlan('');
+          setError(payment.error?.description || 'Payment was not completed. You can retry checkout when ready.');
+        },
+        onDismiss: () => { setBusyPlan(''); setNotice('Checkout closed. Your subscription remains pending until payment is verified.'); },
       });
-      checkout.on('payment.failed', (payment) => {
-        setBusyPlan('');
-        setError(payment.error?.description || 'Payment was not completed. You can retry checkout when ready.');
-      });
-      checkout.open();
     } catch (requestError) { setError(requestError.message); setBusyPlan(''); }
   };
 

@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import Brand from './Brand.jsx';
 import Icon from './Icon.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import ThemeToggle from './ThemeToggle.jsx';
 
 const customerItems = [
   { to: '/app', label: 'Overview', icon: 'grid', end: true },
@@ -39,7 +40,7 @@ export default function WorkspaceLayout() {
       </div>
     </aside>
     <div className="workspace-main">
-      <header className="workspace-topbar"><div><span className="status-dot" /> Secure Brightloop workspace</div><span className="topbar-email">{user?.email}</span></header>
+      <header className="workspace-topbar"><div><span className="status-dot" /> Secure Brightloop workspace</div><span className="topbar-email">{user?.email}</span><ThemeToggle/></header>
       <main className="workspace-content"><Outlet /></main>
     </div>
   </div>;

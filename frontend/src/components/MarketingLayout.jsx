@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Brand from './Brand.jsx';
 import Icon from './Icon.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import ThemeToggle from './ThemeToggle.jsx';
 
 const navItems = [['Features', '#features'], ['How it works', '#how-it-works'], ['Integrations', '#integrations'], ['Pricing', '#pricing']];
 
@@ -16,7 +17,7 @@ export default function MarketingLayout({ children }) {
         <button className="icon-button menu-toggle" aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} onClick={() => setOpen(!open)}><Icon name={open ? 'close' : 'menu'} /></button>
         <nav className={`main-nav${open ? ' is-open' : ''}`} aria-label="Main navigation">
           {navItems.map(([label, href]) => <a key={href} href={href} onClick={() => setOpen(false)}>{label}</a>)}
-          <div className="nav-actions"><Link className="button button-quiet button-small" to={user ? '/app' : '/login'}>{user ? 'Workspace' : 'Log in'}</Link><Link className="button button-primary button-small" to={user ? '/app' : '/register'}>{user ? 'My account' : 'Get started'} <Icon name="arrow" size={15} /></Link></div>
+          <div className="nav-actions"><ThemeToggle/><Link className="button button-quiet button-small" to={user ? '/app' : '/login'}>{user ? 'Workspace' : 'Log in'}</Link><Link className="button button-primary button-small" to={user ? '/app' : '/register'}>{user ? 'My account' : 'Get started'} <Icon name="arrow" size={15} /></Link></div>
         </nav>
       </div>
     </header>

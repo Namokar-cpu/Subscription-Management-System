@@ -28,7 +28,7 @@ adminRouter.get('/dashboard', async (_req, res, next) => {
     const now = new Date();
     const monthFrom = new Date(now.getFullYear(), now.getMonth() - 5, 1);
     const upcomingUntil = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const [activeSubscriptions, customerCount, productCount, activePlanCount, allActiveSubs, invoices, upcomingRenewals, attempts, recentPayments, revenuePayments, subscriptionStatuses] = await Promise.all([
+    const [activeSubscriptions, customerCount, productCount, activePlanCount, allActiveSubs, invoices, upcomingRenewals, attempts, recentPayments, revenuePayments, subscriptionStatuses, recentCustomers, renewalItems] = await Promise.all([
       prisma.subscription.count({ where: { status: SubscriptionStatus.ACTIVE } }),
       prisma.customer.count(),
       prisma.product.count({ where: { active: true } }),
@@ -40,6 +40,8 @@ adminRouter.get('/dashboard', async (_req, res, next) => {
       prisma.payment.findMany({ orderBy: { paidAt: 'desc' }, take: 8, include: { invoice: { select: { number: true, customer: { select: { name: true, companyName: true } } } } } }),
       prisma.payment.findMany({ where: { paidAt: { gte: monthFrom } }, select: { amount: true, paidAt: true, invoice: { select: { currency: true } } } }),
       prisma.subscription.groupBy({ by: ['status'], _count: { _all: true } }),
+      prisma.customer.findMany({ orderBy: { createdAt: 'desc' }, take: 3, select: { id: true, name: true, companyName: true, createdAt: true } }),
+      prisma.subscription.findMany({ where: { status: SubscriptionStatus.ACTIVE, nextBillingDate: { gte: now, lte: upcomingUntil } }, orderBy: { nextBillingDate: 'asc' }, take: 3, select: { id: true, number: true, nextBillingDate: true, plan: { select: { name: true } }, customer: { select: { name: true, companyName: true } } } }),
     ]);
 
     const mrrByCurrency = new Map<string, Prisma.Decimal>();
@@ -94,6 +96,8 @@ adminRouter.get('/dashboard', async (_req, res, next) => {
       revenueByPlan: Array.from(planRevenue.values()),
       subscriptionStatuses: subscriptionStatuses.map((item) => ({ status: item.status, count: item._count._all })),
       recentPayments: recentPayments.map((payment) => ({ id: payment.id, amount: payment.amount, method: payment.method, reference: payment.reference, paidAt: payment.paidAt, invoice: payment.invoice })),
+      recentCustomers,
+      renewalItems,
       integrationStatus: { razorpayConfigured: Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET), emailConfigured: Boolean(env.RESEND_API_KEY) },
     } });
   } catch (error) { next(error); }
